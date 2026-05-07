@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+trained_models/*.joblib
+trained_models/*.pkl
+
+.pytest_cache/
+.mypy_cache/
