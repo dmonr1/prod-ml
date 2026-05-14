@@ -75,7 +75,7 @@ def predecir_riesgo_global(payload: PrediccionGlobalRequest, modelo_version: str
 
     return PrediccionGlobalResponse(
         matricula_id=payload.matricula_id,
-        bimestre_id=payload.bimestre_id,
+        periodo_evaluacion_id=payload.periodo_evaluacion_id,
         puntaje_riesgo=puntaje,
         nivel_riesgo=nivel,
         modelo_version=modelo_version,
@@ -118,7 +118,7 @@ def predecir_riesgo_curso(payload: PrediccionCursoRequest, modelo_version: str) 
         matricula_id=payload.matricula_id,
         curso_id=payload.curso_id,
         curso_nombre=payload.curso_nombre,
-        bimestre_id=payload.bimestre_id,
+        periodo_evaluacion_id=payload.periodo_evaluacion_id,
         puntaje_riesgo=puntaje,
         nivel_riesgo=nivel,
         modelo_version=modelo_version,

@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 class PrediccionGlobalRequest(BaseModel):
     matricula_id: int
-    bimestre_id: int
+    periodo_evaluacion_id: int
     promedio_general: float = Field(ge=0, le=20)
     cantidad_cursos: int = Field(ge=1)
     cantidad_cursos_desaprobados: int = Field(ge=0)
@@ -21,7 +21,7 @@ class PrediccionCursoRequest(BaseModel):
     matricula_id: int
     curso_id: int
     curso_nombre: str
-    bimestre_id: int
+    periodo_evaluacion_id: int
     nota_curso: float = Field(ge=0, le=20)
     promedio_general: float = Field(ge=0, le=20)
     cantidad_cursos_desaprobados: int = Field(ge=0)
@@ -37,7 +37,7 @@ class PredictRequest(BaseModel):
 
 class PrediccionGlobalResponse(BaseModel):
     matricula_id: int
-    bimestre_id: int
+    periodo_evaluacion_id: int
     puntaje_riesgo: float
     nivel_riesgo: str
     modelo_version: str
@@ -48,7 +48,7 @@ class PrediccionCursoResponse(BaseModel):
     matricula_id: int
     curso_id: int
     curso_nombre: str
-    bimestre_id: int
+    periodo_evaluacion_id: int
     puntaje_riesgo: float
     nivel_riesgo: str
     modelo_version: str
