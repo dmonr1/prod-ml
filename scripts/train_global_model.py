@@ -6,15 +6,26 @@ from sklearn.decomposition import PCA
 from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.preprocessing import StandardScaler
 from xgboost import XGBClassifier
 
 from app.config import GLOBAL_MODEL_PATH, PCA_PATH
-from app.schemas.training import FEATURES_GLOBALES, TARGET_GLOBAL
+from app.schemas.training import FEATURES_GLOBALES
 
 
 DATASET_PATH = Path("data/dataset_riesgo_global.csv")
-ENCODER_PATH = Path("trained_models/label_encoder_global.joblib")
+
+
+def construir_objetivo_fracaso(df: pd.DataFrame) -> pd.Series:
+    cursos_desaprobados = df.get("cantidad_cursos_desaprobados", 0).fillna(0)
+    promedio_general = df.get("promedio_general", 20).fillna(20)
+    nota_minima = df.get("nota_minima", 20).fillna(20)
+
+    return (
+        (cursos_desaprobados >= 1)
+        | (promedio_general < 11)
+        | (nota_minima < 11)
+    ).astype(int)
 
 
 def main() -> None:
@@ -27,17 +38,14 @@ def main() -> None:
             df[column] = 0
 
     X = df[FEATURES_GLOBALES]
-    y = df[TARGET_GLOBAL]
-
-    label_encoder = LabelEncoder()
-    y_encoded = label_encoder.fit_transform(y)
+    y = construir_objetivo_fracaso(df)
 
     X_train, X_test, y_train, y_test = train_test_split(
         X,
-        y_encoded,
+        y,
         test_size=0.25,
         random_state=42,
-        stratify=y_encoded,
+        stratify=y,
     )
 
     pipeline = Pipeline(
@@ -52,8 +60,8 @@ def main() -> None:
                     learning_rate=0.08,
                     subsample=0.9,
                     colsample_bytree=0.9,
-                    objective="multi:softprob",
-                    eval_metric="mlogloss",
+                    objective="binary:logistic",
+                    eval_metric="logloss",
                     random_state=42,
                 ),
             ),
@@ -64,18 +72,16 @@ def main() -> None:
     y_pred = pipeline.predict(X_test)
 
     print("=== REPORTE DE CLASIFICACION ===")
-    print(classification_report(y_test, y_pred, target_names=label_encoder.classes_))
+    print(classification_report(y_test, y_pred, target_names=["NO_FRACASO", "FRACASO"]))
 
     GLOBAL_MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(pipeline, GLOBAL_MODEL_PATH)
-    joblib.dump(label_encoder, ENCODER_PATH)
 
     pca_step = pipeline.named_steps["pca"]
     joblib.dump(pca_step, PCA_PATH)
 
     print(f"Modelo global guardado en: {GLOBAL_MODEL_PATH}")
     print(f"PCA guardado en: {PCA_PATH}")
-    print(f"Encoder guardado en: {ENCODER_PATH}")
 
 
 if __name__ == "__main__":

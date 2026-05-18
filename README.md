@@ -8,8 +8,8 @@ Este proyecto expone una API para:
 
 - recibir variables academicas desde Spring Boot
 - aplicar transformaciones y analisis con PCA
-- ejecutar predicciones de riesgo academico con XGBoost
-- devolver riesgo global y riesgo por curso
+- ejecutar predicciones de riesgo de fracaso academico con XGBoost
+- devolver probabilidad de fracaso global y por curso
 
 ## Estructura
 
@@ -35,8 +35,8 @@ Recibe:
 
 Devuelve:
 
-- puntaje y nivel de riesgo global
-- puntaje y nivel de riesgo por curso
+- probabilidad de fracaso y nivel de riesgo global
+- probabilidad de fracaso y nivel de riesgo por curso
 
 ## Levantar en local
 
@@ -54,8 +54,8 @@ La base del servicio ya esta creada.
 Por ahora:
 
 - la API esta operativa
-- existe modelo real para riesgo global
-- el riesgo por curso puede usar modelo real si el artefacto ya fue entrenado
+- existe modelo binario para probabilidad de fracaso global
+- existe modelo binario para probabilidad de fracaso por curso
 - existen datasets iniciales de entrenamiento para riesgo global y por curso
 - existen scripts de entrenamiento con PCA + XGBoost
 

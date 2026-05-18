@@ -6,15 +6,19 @@ from sklearn.decomposition import PCA
 from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.preprocessing import StandardScaler
 from xgboost import XGBClassifier
 
 from app.config import COURSE_MODEL_PATH, COURSE_PCA_PATH
-from app.schemas.training import FEATURES_CURSO, TARGET_CURSO
+from app.schemas.training import FEATURES_CURSO
 
 
 DATASET_PATH = Path("data/dataset_riesgo_curso.csv")
-ENCODER_PATH = Path("trained_models/label_encoder_curso.joblib")
+
+
+def construir_objetivo_fracaso(df: pd.DataFrame) -> pd.Series:
+    nota_curso = df.get("nota_curso", 20).fillna(20)
+    return (nota_curso < 11).astype(int)
 
 
 def main() -> None:
@@ -27,17 +31,14 @@ def main() -> None:
             df[column] = 0
 
     X = df[FEATURES_CURSO]
-    y = df[TARGET_CURSO]
-
-    label_encoder = LabelEncoder()
-    y_encoded = label_encoder.fit_transform(y)
+    y = construir_objetivo_fracaso(df)
 
     X_train, X_test, y_train, y_test = train_test_split(
         X,
-        y_encoded,
+        y,
         test_size=0.25,
         random_state=42,
-        stratify=y_encoded,
+        stratify=y,
     )
 
     pipeline = Pipeline(
@@ -52,8 +53,8 @@ def main() -> None:
                     learning_rate=0.08,
                     subsample=0.9,
                     colsample_bytree=0.9,
-                    objective="multi:softprob",
-                    eval_metric="mlogloss",
+                    objective="binary:logistic",
+                    eval_metric="logloss",
                     random_state=42,
                 ),
             ),
@@ -64,16 +65,14 @@ def main() -> None:
     y_pred = pipeline.predict(X_test)
 
     print("=== REPORTE DE CLASIFICACION CURSO ===")
-    print(classification_report(y_test, y_pred, target_names=label_encoder.classes_))
+    print(classification_report(y_test, y_pred, target_names=["NO_FRACASO", "FRACASO"]))
 
     COURSE_MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(pipeline, COURSE_MODEL_PATH)
-    joblib.dump(label_encoder, ENCODER_PATH)
     joblib.dump(pipeline.named_steps["pca"], COURSE_PCA_PATH)
 
     print(f"Modelo curso guardado en: {COURSE_MODEL_PATH}")
     print(f"PCA curso guardado en: {COURSE_PCA_PATH}")
-    print(f"Encoder curso guardado en: {ENCODER_PATH}")
 
 
 if __name__ == "__main__":
