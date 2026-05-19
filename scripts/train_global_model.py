@@ -2,14 +2,13 @@ from pathlib import Path
 
 import joblib
 import pandas as pd
-from sklearn.decomposition import PCA
 from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
+from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
-from xgboost import XGBClassifier
 
-from app.config import GLOBAL_MODEL_PATH, PCA_PATH
+from app.config import GLOBAL_MODEL_PATH
 from app.schemas.training import FEATURES_GLOBALES
 
 
@@ -17,6 +16,9 @@ DATASET_PATH = Path("data/dataset_riesgo_global.csv")
 
 
 def construir_objetivo_fracaso(df: pd.DataFrame) -> pd.Series:
+    if "fracaso_global" in df.columns:
+        return df["fracaso_global"].fillna(0).astype(int)
+
     cursos_desaprobados = df.get("cantidad_cursos_desaprobados", 0).fillna(0)
     promedio_general = df.get("promedio_general", 20).fillna(20)
     nota_minima = df.get("nota_minima", 20).fillna(20)
@@ -51,17 +53,11 @@ def main() -> None:
     pipeline = Pipeline(
         steps=[
             ("scaler", StandardScaler()),
-            ("pca", PCA(n_components=min(5, len(FEATURES_GLOBALES)))),
             (
                 "model",
-                XGBClassifier(
-                    n_estimators=120,
-                    max_depth=4,
-                    learning_rate=0.08,
-                    subsample=0.9,
-                    colsample_bytree=0.9,
-                    objective="binary:logistic",
-                    eval_metric="logloss",
+                LogisticRegression(
+                    max_iter=1000,
+                    class_weight="balanced",
                     random_state=42,
                 ),
             ),
@@ -77,11 +73,7 @@ def main() -> None:
     GLOBAL_MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(pipeline, GLOBAL_MODEL_PATH)
 
-    pca_step = pipeline.named_steps["pca"]
-    joblib.dump(pca_step, PCA_PATH)
-
     print(f"Modelo global guardado en: {GLOBAL_MODEL_PATH}")
-    print(f"PCA guardado en: {PCA_PATH}")
 
 
 if __name__ == "__main__":

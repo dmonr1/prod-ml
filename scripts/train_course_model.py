@@ -2,14 +2,13 @@ from pathlib import Path
 
 import joblib
 import pandas as pd
-from sklearn.decomposition import PCA
 from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
+from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
-from xgboost import XGBClassifier
 
-from app.config import COURSE_MODEL_PATH, COURSE_PCA_PATH
+from app.config import COURSE_MODEL_PATH
 from app.schemas.training import FEATURES_CURSO
 
 
@@ -17,6 +16,9 @@ DATASET_PATH = Path("data/dataset_riesgo_curso.csv")
 
 
 def construir_objetivo_fracaso(df: pd.DataFrame) -> pd.Series:
+    if "fracaso_curso" in df.columns:
+        return df["fracaso_curso"].fillna(0).astype(int)
+
     nota_curso = df.get("nota_curso", 20).fillna(20)
     return (nota_curso < 11).astype(int)
 
@@ -44,17 +46,11 @@ def main() -> None:
     pipeline = Pipeline(
         steps=[
             ("scaler", StandardScaler()),
-            ("pca", PCA(n_components=min(4, len(FEATURES_CURSO)))),
             (
                 "model",
-                XGBClassifier(
-                    n_estimators=120,
-                    max_depth=4,
-                    learning_rate=0.08,
-                    subsample=0.9,
-                    colsample_bytree=0.9,
-                    objective="binary:logistic",
-                    eval_metric="logloss",
+                LogisticRegression(
+                    max_iter=1000,
+                    class_weight="balanced",
                     random_state=42,
                 ),
             ),
@@ -69,10 +65,8 @@ def main() -> None:
 
     COURSE_MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(pipeline, COURSE_MODEL_PATH)
-    joblib.dump(pipeline.named_steps["pca"], COURSE_PCA_PATH)
 
     print(f"Modelo curso guardado en: {COURSE_MODEL_PATH}")
-    print(f"PCA curso guardado en: {COURSE_PCA_PATH}")
 
 
 if __name__ == "__main__":
