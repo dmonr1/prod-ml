@@ -15,6 +15,13 @@ class PrediccionGlobalRequest(BaseModel):
     clases_asistidas: int = Field(ge=0)
     porcentaje_asistencia: float = Field(ge=0, le=100)
     cantidad_evaluaciones_registradas: int = Field(default=0, ge=0)
+    cantidad_notas_desaprobadas_total: int = Field(default=0, ge=0)
+    cantidad_notas_criticas_total: int = Field(default=0, ge=0)
+    peor_nota_periodo: float = Field(default=20, ge=0, le=20)
+    cantidad_cursos_c: int = Field(default=0, ge=0)
+    cantidad_cursos_b: int = Field(default=0, ge=0)
+    cantidad_cursos_a: int = Field(default=0, ge=0)
+    cantidad_cursos_ad: int = Field(default=0, ge=0)
 
 
 class PrediccionCursoRequest(BaseModel):
@@ -27,6 +34,15 @@ class PrediccionCursoRequest(BaseModel):
     cantidad_cursos_desaprobados: int = Field(ge=0)
     porcentaje_asistencia: float = Field(ge=0, le=100)
     cantidad_evaluaciones_registradas: int = Field(default=0, ge=0)
+    nota_minima_curso: float = Field(default=20, ge=0, le=20)
+    nota_maxima_curso: float = Field(default=20, ge=0, le=20)
+    cantidad_notas_desaprobadas: int = Field(default=0, ge=0)
+    cantidad_notas_criticas: int = Field(default=0, ge=0)
+    nota_examen_principal: float = Field(default=20, ge=0, le=20)
+    cantidad_notas_c: int = Field(default=0, ge=0)
+    cantidad_notas_b: int = Field(default=0, ge=0)
+    cantidad_notas_a: int = Field(default=0, ge=0)
+    cantidad_notas_ad: int = Field(default=0, ge=0)
 
 
 class PredictRequest(BaseModel):
