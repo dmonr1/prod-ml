@@ -134,7 +134,6 @@ def predecir_riesgo_global(payload: PrediccionGlobalRequest, modelo_version: str
         puntaje, nivel = _predecir_global_heuristico(payload)
     else:
         puntaje = _ajustar_puntaje_global(payload, puntaje)
-        puntaje = _acotar_probabilidad_visible(puntaje)
         nivel = _clasificar_riesgo(puntaje)
 
     return PrediccionGlobalResponse(
@@ -202,7 +201,7 @@ def _ajustar_puntaje_curso(payload: PrediccionCursoRequest, puntaje: float) -> f
         ajuste += 5
 
     puntaje_ajustado = _limitar(puntaje + ajuste)
-
+    
     if promedio_solido and examen_aprobado and asistencia_alta and fragilidad_acotada and bloque_fuerte:
         puntaje_ajustado = min(puntaje_ajustado, 56.0)
 
@@ -220,7 +219,6 @@ def predecir_riesgo_curso(payload: PrediccionCursoRequest, modelo_version: str) 
         puntaje, nivel = _predecir_curso_heuristico(payload)
     else:
         puntaje = _ajustar_puntaje_curso(payload, puntaje)
-        puntaje = _acotar_probabilidad_visible(puntaje)
         nivel = _clasificar_riesgo(puntaje)
 
     return PrediccionCursoResponse(
@@ -251,7 +249,9 @@ def _predecir_curso_heuristico(payload: PrediccionCursoRequest) -> tuple[float, 
     if payload.cantidad_evaluaciones_registradas <= 1:
         riesgo += 4
     puntaje = _acotar_probabilidad_visible(_limitar(riesgo))
+    
     nivel = _clasificar_riesgo(puntaje)
     return puntaje, nivel
 
 
+ 
