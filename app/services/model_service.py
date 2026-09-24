@@ -9,7 +9,7 @@ from app.schemas.prediction import (
     PrediccionGlobalRequest,
     PrediccionGlobalResponse,
 )
-from app.schemas.training import FEATURES_CURSO, FEATURES_GLOBALES
+from app.schemas.training import FEATURES_CURSO, FEATURES_CURSO_CORTE, FEATURES_GLOBALES, FEATURES_GLOBALES_CORTE
 from app.services.feature_service import preparar_features_curso, preparar_features_globales
 
 _global_model = None
@@ -60,7 +60,6 @@ def _cargar_modelo_curso():
 def _obtener_probabilidad_clase_positiva(model, dataframe: pd.DataFrame) -> float | None:
     if model is None or not hasattr(model, "predict_proba"):
         return None
-
     try:
         probabilidades = model.predict_proba(dataframe)[0]
         classes = getattr(model, "classes_", None)
@@ -82,42 +81,39 @@ def _obtener_probabilidad_clase_positiva(model, dataframe: pd.DataFrame) -> floa
         return None
 
 
+def _nombres_features_del_modelo(model, fallback: list[str]) -> list[str]:
+    if model is None:
+        return fallback
+    names = getattr(model, "feature_names_in_", None)
+    if names is None and hasattr(model, "named_steps"):
+        for step in model.named_steps.values():
+            names = getattr(step, "feature_names_in_", None)
+            if names is not None:
+                break
+    return [str(name) for name in names] if names is not None else fallback
+
+
 def _ajustar_puntaje_global(payload: PrediccionGlobalRequest, puntaje: float) -> float:
     ajuste = 0.0
 
     promedio_solido = payload.promedio_general >= 13.0
     asistencia_alta = payload.porcentaje_asistencia >= 90
-    sin_fracaso_real = payload.cantidad_cursos_desaprobados == 0
-    cursos_fragiles_controlados = payload.cantidad_cursos_c <= 1 and payload.cantidad_cursos_b <= 3
-    bloque_estable = payload.cantidad_cursos_a + payload.cantidad_cursos_ad >= max(1, payload.cantidad_cursos // 2)
-    criticidad_acotada = payload.cantidad_notas_criticas_total <= 3
-    peor_nota_controlada = payload.peor_nota_periodo >= 8
+    notas_parciales_controladas = payload.nota_minima >= 8
+    seguimiento_suficiente = payload.cantidad_evaluaciones_registradas >= 2
 
-    if promedio_solido and asistencia_alta and sin_fracaso_real and cursos_fragiles_controlados and bloque_estable and criticidad_acotada and peor_nota_controlada:
+    if promedio_solido and asistencia_alta and notas_parciales_controladas and seguimiento_suficiente:
         ajuste -= 24
-    elif payload.promedio_general >= 12.5 and payload.porcentaje_asistencia >= 85 and payload.cantidad_cursos_desaprobados == 0:
+    elif payload.promedio_general >= 12.5 and payload.porcentaje_asistencia >= 85:
         ajuste -= 12
 
-    if payload.peor_nota_periodo <= 5:
+    if payload.nota_minima <= 5:
         ajuste += 7
-    elif payload.peor_nota_periodo <= 7:
+    elif payload.nota_minima <= 7:
         ajuste += 3
-
-    if payload.cantidad_notas_criticas_total >= 4:
-        ajuste += 6
-    elif payload.cantidad_notas_criticas_total == 3:
-        ajuste += 3
-
-    if payload.cantidad_cursos_c >= 3:
-        ajuste += 8
-    elif payload.cantidad_cursos_c == 2:
-        ajuste += 4
-    elif payload.cantidad_cursos_c == 1:
-        ajuste += 1
 
     puntaje_ajustado = _limitar(puntaje + ajuste)
 
-    if promedio_solido and asistencia_alta and sin_fracaso_real and cursos_fragiles_controlados and bloque_estable and criticidad_acotada and peor_nota_controlada:
+    if promedio_solido and asistencia_alta and notas_parciales_controladas and seguimiento_suficiente:
         puntaje_ajustado = min(puntaje_ajustado, 58.0)
 
     return puntaje_ajustado
@@ -127,7 +123,12 @@ def predecir_riesgo_global(payload: PrediccionGlobalRequest, modelo_version: str
     features = preparar_features_globales(payload)
 
     model = _cargar_modelo_global()
-    dataframe = pd.DataFrame([[features[col] for col in FEATURES_GLOBALES]], columns=FEATURES_GLOBALES)
+    expected_features = FEATURES_GLOBALES_CORTE if payload.corte_seguimiento_id is not None else FEATURES_GLOBALES
+    model_features = _nombres_features_del_modelo(model, expected_features)
+    if payload.corte_seguimiento_id is not None and model_features != FEATURES_GLOBALES_CORTE:
+        model = None
+        model_features = FEATURES_GLOBALES_CORTE
+    dataframe = pd.DataFrame([[features[col] for col in model_features]], columns=model_features)
     puntaje = _obtener_probabilidad_clase_positiva(model, dataframe)
 
     if puntaje is None:
@@ -139,6 +140,9 @@ def predecir_riesgo_global(payload: PrediccionGlobalRequest, modelo_version: str
     return PrediccionGlobalResponse(
         matricula_id=payload.matricula_id,
         periodo_evaluacion_id=payload.periodo_evaluacion_id,
+        corte_seguimiento_id=payload.corte_seguimiento_id,
+        semana_corte=payload.semana_corte,
+        fecha_corte=payload.fecha_corte,
         puntaje_riesgo=puntaje,
         nivel_riesgo=nivel,
         modelo_version=modelo_version,
@@ -149,18 +153,10 @@ def predecir_riesgo_global(payload: PrediccionGlobalRequest, modelo_version: str
 def _predecir_global_heuristico(payload: PrediccionGlobalRequest) -> tuple[float, str]:
     riesgo = 0.0
     riesgo += max(0.0, (11 - payload.promedio_general) * 12)
-    riesgo += payload.cantidad_cursos_desaprobados * 16
-    riesgo += payload.cantidad_notas_desaprobadas_total * 2.5
-    riesgo += payload.cantidad_notas_criticas_total * 4.5
-    riesgo += payload.cantidad_cursos_c * 14
-    riesgo += payload.cantidad_cursos_b * 4
-    riesgo -= payload.cantidad_cursos_a * 2
-    riesgo -= payload.cantidad_cursos_ad * 4
     riesgo += max(0.0, (11 - payload.nota_minima) * 10)
-    riesgo += max(0.0, (11 - payload.peor_nota_periodo) * 8)
-    riesgo += max(0.0, (85 - payload.porcentaje_asistencia) * 0.25)
-    if payload.cantidad_evaluaciones_registradas <= 1:
-        riesgo += 5
+    riesgo += max(0.0, (90 - payload.porcentaje_asistencia) * 0.35)
+    if payload.cantidad_evaluaciones_registradas < 2:
+        riesgo += 3
     puntaje = _acotar_probabilidad_visible(_limitar(riesgo))
     nivel = _clasificar_riesgo(puntaje)
     return puntaje, nivel
@@ -170,14 +166,13 @@ def _ajustar_puntaje_curso(payload: PrediccionCursoRequest, puntaje: float) -> f
     ajuste = 0.0
 
     promedio_solido = payload.nota_curso >= 13.0
-    examen_aprobado = payload.nota_examen_principal >= 13.0
     asistencia_alta = payload.porcentaje_asistencia >= 90
-    fragilidad_acotada = payload.cantidad_notas_desaprobadas <= 3 and payload.cantidad_notas_criticas <= 3
-    bloque_fuerte = payload.cantidad_notas_a + payload.cantidad_notas_ad >= 5
+    notas_parciales_controladas = payload.nota_minima_curso >= 8
+    seguimiento_suficiente = payload.cantidad_evaluaciones_registradas >= 2
 
-    if promedio_solido and examen_aprobado and asistencia_alta and fragilidad_acotada and bloque_fuerte:
+    if promedio_solido and asistencia_alta and notas_parciales_controladas and seguimiento_suficiente:
         ajuste -= 22
-    elif payload.nota_curso >= 12.0 and payload.nota_examen_principal >= 11.0 and payload.porcentaje_asistencia >= 85:
+    elif payload.nota_curso >= 12.0 and payload.porcentaje_asistencia >= 85:
         ajuste -= 10
 
     if payload.nota_minima_curso <= 5:
@@ -185,24 +180,9 @@ def _ajustar_puntaje_curso(payload: PrediccionCursoRequest, puntaje: float) -> f
     elif payload.nota_minima_curso <= 8:
         ajuste += 3
 
-    if payload.cantidad_notas_criticas >= 3:
-        ajuste += 6
-    elif payload.cantidad_notas_criticas == 2:
-        ajuste += 2
-
-    if payload.cantidad_notas_c >= 4:
-        ajuste += 7
-    elif payload.cantidad_notas_c == 3:
-        ajuste += 3
-    elif payload.cantidad_notas_c == 2:
-        ajuste += 1
-
-    if payload.nota_examen_principal < 11:
-        ajuste += 5
-
     puntaje_ajustado = _limitar(puntaje + ajuste)
-    
-    if promedio_solido and examen_aprobado and asistencia_alta and fragilidad_acotada and bloque_fuerte:
+
+    if promedio_solido and asistencia_alta and notas_parciales_controladas and seguimiento_suficiente:
         puntaje_ajustado = min(puntaje_ajustado, 56.0)
 
     return puntaje_ajustado
@@ -212,7 +192,12 @@ def predecir_riesgo_curso(payload: PrediccionCursoRequest, modelo_version: str) 
     features = preparar_features_curso(payload)
 
     model = _cargar_modelo_curso()
-    dataframe = pd.DataFrame([[features[col] for col in FEATURES_CURSO]], columns=FEATURES_CURSO)
+    expected_features = FEATURES_CURSO_CORTE if payload.corte_seguimiento_id is not None else FEATURES_CURSO
+    model_features = _nombres_features_del_modelo(model, expected_features)
+    if payload.corte_seguimiento_id is not None and model_features != FEATURES_CURSO_CORTE:
+        model = None
+        model_features = FEATURES_CURSO_CORTE
+    dataframe = pd.DataFrame([[features[col] for col in model_features]], columns=model_features)
     puntaje = _obtener_probabilidad_clase_positiva(model, dataframe)
 
     if puntaje is None:
@@ -226,6 +211,9 @@ def predecir_riesgo_curso(payload: PrediccionCursoRequest, modelo_version: str) 
         curso_id=payload.curso_id,
         curso_nombre=payload.curso_nombre,
         periodo_evaluacion_id=payload.periodo_evaluacion_id,
+        corte_seguimiento_id=payload.corte_seguimiento_id,
+        semana_corte=payload.semana_corte,
+        fecha_corte=payload.fecha_corte,
         puntaje_riesgo=puntaje,
         nivel_riesgo=nivel,
         modelo_version=modelo_version,
@@ -237,17 +225,10 @@ def _predecir_curso_heuristico(payload: PrediccionCursoRequest) -> tuple[float, 
     riesgo = 0.0
     riesgo += max(0.0, (11 - payload.nota_curso) * 14)
     riesgo += max(0.0, (11 - payload.nota_minima_curso) * 10)
-    riesgo += payload.cantidad_notas_desaprobadas * 6
-    riesgo += payload.cantidad_notas_criticas * 9
-    riesgo += payload.cantidad_notas_c * 8
-    riesgo += payload.cantidad_notas_b * 2
-    riesgo -= payload.cantidad_notas_a * 1.5
-    riesgo -= payload.cantidad_notas_ad * 2.5
-    riesgo += max(0.0, (11 - payload.nota_examen_principal) * 7)
     riesgo += max(0.0, (11 - payload.promedio_general) * 6)
-    riesgo += max(0.0, (85 - payload.porcentaje_asistencia) * 0.2)
-    if payload.cantidad_evaluaciones_registradas <= 1:
-        riesgo += 4
+    riesgo += max(0.0, (90 - payload.porcentaje_asistencia) * 0.3)
+    if payload.cantidad_evaluaciones_registradas < 2:
+        riesgo += 3
     puntaje = _acotar_probabilidad_visible(_limitar(riesgo))
     
     nivel = _clasificar_riesgo(puntaje)

@@ -1,83 +1,63 @@
 # Rendimiento Academico ML
 
-Servicio Python para el modulo de Data Mining y Machine Learning del sistema de rendimiento academico.
+Servicio FastAPI para recibir indicadores academicos desde Spring Boot y calcular riesgo global y por curso.
 
-## Objetivo
+## Estado de los modelos
 
-Este proyecto expone una API para:
+Los artefactos activos se entrenan con XGBoost usando el conjunto sintetico de cortes descrito abajo. No representan un modelo validado con historiales reales del colegio.
 
-- recibir variables academicas desde Spring Boot
-- aplicar transformaciones y analisis con PCA
-- ejecutar predicciones de riesgo de fracaso academico con XGBoost
-- devolver probabilidad de fracaso global y por curso
+Los CSV iniciales no incluyen fecha de corte y contienen variables agregadas del mismo periodo que define el resultado. Por ello no permiten medir una alerta temprana sin fuga de informacion. No generar snapshots inventados a partir de promedios finales.
 
-## Estructura
+## Contrato de entrenamiento
 
-```text
-app/
-  main.py
-  config.py
-  schemas/
-  services/
-data/
-trained_models/
-scripts/
-```
+Cada fila debe representar la informacion disponible para un alumno antes del resultado final. Se requieren estas columnas:
 
-## Endpoint principal
+- `alumno_id`: identifica al alumno para mantener sus registros en una sola particion.
+- `fecha_corte`: fecha hasta la cual se calculan las variables predictoras.
+- `fecha_resultado`: fecha posterior en que se determina el resultado final.
+- `fracaso_global` o `fracaso_curso`: etiqueta final binaria, segun el modelo.
 
-`POST /predict`
+Las fechas se validan para garantizar `fecha_corte < fecha_resultado`. El conjunto de prueba se separa por alumno y los predictores se limitan a indicadores parciales disponibles al corte. Los scripts imprimen Accuracy, Precision, Recall, F1, AUC y matriz de confusion; solo guardan los artefactos si el contrato y la particion son validos.
 
-Recibe:
+Columnas predictoras requeridas:
 
-- una prediccion global por alumno
-- varias predicciones por curso del mismo alumno
+- Global: `promedio_general`, `cantidad_cursos`, `nota_maxima`, `nota_minima`, `clases_programadas`, `clases_asistidas`, `porcentaje_asistencia`, `cantidad_evaluaciones_registradas`.
+- Por curso: `nota_curso`, `promedio_general`, `porcentaje_asistencia`, `cantidad_evaluaciones_registradas`, `nota_minima_curso`, `nota_maxima_curso`.
 
-Devuelve:
+Los objetivos son `fracaso_global` y `fracaso_curso`, calculados con el resultado final posterior al corte, nunca con esas variables parciales.
 
-- probabilidad de fracaso y nivel de riesgo global
-- probabilidad de fracaso y nivel de riesgo por curso
+## Entrenar con historial real
 
-## Levantar en local
-
-```bash
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
-```
-
-## Estado actual
-
-La base del servicio ya esta creada.
-
-Por ahora:
-
-- la API esta operativa
-- existe modelo binario para probabilidad de fracaso global
-- existe modelo binario para probabilidad de fracaso por curso
-- existen datasets iniciales de entrenamiento para riesgo global y por curso
-- existen scripts de entrenamiento con PCA + XGBoost
-
-## Entrenamiento inicial
-
-Dataset base:
+Para sustituir los modelos sinteticos por modelos validos para el colegio, reemplaza estos CSV con snapshots retrospectivos fechados, derivados de registros academicos reales:
 
 - [data/dataset_riesgo_global.csv](data/dataset_riesgo_global.csv)
 - [data/dataset_riesgo_curso.csv](data/dataset_riesgo_curso.csv)
 
-Script:
+Luego ejecuta los entrenadores de datos reales:
 
 ```bash
 python -m scripts.train_global_model
 python -m scripts.train_course_model
 ```
 
-Salida esperada:
+## Datos sinteticos y entrenamiento activo
 
-- `trained_models/modelo_riesgo_global.joblib`
-- `trained_models/pca_transformer.joblib`
-- `trained_models/label_encoder_global.joblib`
-- `trained_models/modelo_riesgo_curso.joblib`
-- `trained_models/pca_transformer_curso.joblib`
-- `trained_models/label_encoder_curso.joblib`
+La base local disponible no contiene suficientes historiales fechados para construir cortes reales. Se puede generar un conjunto reproducible de datos sinteticos y entrenar con el:
+
+```bash
+python -m scripts.generate_synthetic_cutoff_datasets
+python -m scripts.train_synthetic_demo
+```
+
+Por defecto genera 2,000 alumnos simulados, cuatro fechas de corte por alumno, 8,000 filas globales y 40,000 filas curso-alumno. Los CSV quedan en `data/synthetic_demo/` y se marcan con `origen_datos=SIMULADO_SOLO_PARA_PRUEBAS`. El entrenamiento reemplaza los artefactos activos en `trained_models/`, que son los que carga la API. La API reporta `synthetic_cutoff_simulation` en `/health`. Las metricas y probabilidades no estan validadas con alumnos reales ni son evidencia del Colegio San Marcos. Aunque estos modelos se pueden desplegar para demostracion, sus puntajes no deben usarse para decisiones academicas ni presentarse como resultados reales en la tesis.
+
+## Ejecutar la API
+
+```bash
+python -m venv .venv
+.venv\\Scripts\\activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+```
+
+El endpoint de inferencia es `POST /predict`.
