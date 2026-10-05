@@ -154,7 +154,8 @@ def _predecir_global_heuristico(payload: PrediccionGlobalRequest) -> tuple[float
     riesgo = 0.0
     riesgo += max(0.0, (11 - payload.promedio_general) * 12)
     riesgo += max(0.0, (11 - payload.nota_minima) * 10)
-    riesgo += max(0.0, (90 - payload.porcentaje_asistencia) * 0.35)
+    if payload.clases_programadas > 0:
+        riesgo += max(0.0, (90 - payload.porcentaje_asistencia) * 0.35)
     if payload.cantidad_evaluaciones_registradas < 2:
         riesgo += 3
     puntaje = _acotar_probabilidad_visible(_limitar(riesgo))
@@ -226,7 +227,8 @@ def _predecir_curso_heuristico(payload: PrediccionCursoRequest) -> tuple[float, 
     riesgo += max(0.0, (11 - payload.nota_curso) * 14)
     riesgo += max(0.0, (11 - payload.nota_minima_curso) * 10)
     riesgo += max(0.0, (11 - payload.promedio_general) * 6)
-    riesgo += max(0.0, (90 - payload.porcentaje_asistencia) * 0.3)
+    if payload.porcentaje_asistencia > 0:
+        riesgo += max(0.0, (90 - payload.porcentaje_asistencia) * 0.3)
     if payload.cantidad_evaluaciones_registradas < 2:
         riesgo += 3
     puntaje = _acotar_probabilidad_visible(_limitar(riesgo))

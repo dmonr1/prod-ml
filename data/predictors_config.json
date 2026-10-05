@@ -1,0 +1,205 @@
+{
+  "global_features": [
+    {
+      "key": "promedio_general",
+      "label": "Promedio General Acumulado",
+      "tipo": "GLOBAL",
+      "categoria": "ACADEMICO",
+      "descripcion": "Calificación media global obtenida por el estudiante en todas sus asignaturas.",
+      "activo": true,
+      "peso": 2.5
+    },
+    {
+      "key": "porcentaje_asistencia",
+      "label": "Porcentaje de Asistencia Global",
+      "tipo": "GLOBAL",
+      "categoria": "ASISTENCIA",
+      "descripcion": "Tasa efectiva de sesiones asistidas frente al total de clases programadas.",
+      "activo": true,
+      "peso": 2.0
+    },
+    {
+      "key": "nota_minima",
+      "label": "Nota Mínima del Período",
+      "tipo": "GLOBAL",
+      "categoria": "ACADEMICO",
+      "descripcion": "Menor calificación individual registrada en cualquier evaluación del período.",
+      "activo": true,
+      "peso": 1.8
+    },
+    {
+      "key": "cantidad_cursos_desaprobados",
+      "label": "Cursos Desaprobados",
+      "tipo": "GLOBAL",
+      "categoria": "ACADEMICO",
+      "descripcion": "Número total de asignaturas con promedio proyectado menor a 11.",
+      "activo": true,
+      "peso": 2.2
+    },
+    {
+      "key": "cantidad_evaluaciones_registradas",
+      "label": "Evaluaciones Registradas",
+      "tipo": "GLOBAL",
+      "categoria": "EVALUATIVO",
+      "descripcion": "Volumen de evidencias calificadas acumuladas a la fecha de corte.",
+      "activo": true,
+      "peso": 1.0
+    },
+    {
+      "key": "cantidad_notas_criticas_total",
+      "label": "Calificaciones Críticas (<=07)",
+      "tipo": "GLOBAL",
+      "categoria": "EVALUATIVO",
+      "descripcion": "Cantidad de evaluaciones con calificaciones severamente deficientes.",
+      "activo": true,
+      "peso": 2.0
+    },
+    {
+      "key": "cantidad_notas_desaprobadas_total",
+      "label": "Calificaciones Desaprobadas (<=10)",
+      "tipo": "GLOBAL",
+      "categoria": "EVALUATIVO",
+      "descripcion": "Frecuencia de notas registradas por debajo del estándar de aprobación.",
+      "activo": true,
+      "peso": 1.6
+    },
+    {
+      "key": "clases_asistidas",
+      "label": "Sesiones Asistidas",
+      "tipo": "GLOBAL",
+      "categoria": "ASISTENCIA",
+      "descripcion": "Conteo total de asistencias presenciales o síncronas efectivas.",
+      "activo": true,
+      "peso": 1.0
+    },
+    {
+      "key": "clases_programadas",
+      "label": "Sesiones Programadas",
+      "tipo": "GLOBAL",
+      "categoria": "ASISTENCIA",
+      "descripcion": "Carga horaria lectiva impartida acumulada hasta la fecha.",
+      "activo": true,
+      "peso": 0.8
+    },
+    {
+      "key": "peor_nota_periodo",
+      "label": "Peor Nota en Evaluaciones Principales",
+      "tipo": "GLOBAL",
+      "categoria": "ACADEMICO",
+      "descripcion": "Menor puntuación en evaluaciones de alto peso académico.",
+      "activo": true,
+      "peso": 1.5
+    },
+    {
+      "key": "nota_maxima",
+      "label": "Nota Máxima Obtenida",
+      "tipo": "GLOBAL",
+      "categoria": "ACADEMICO",
+      "descripcion": "Rendimiento pico del alumno como indicador de potencial recuperador.",
+      "activo": true,
+      "peso": 0.7
+    },
+    {
+      "key": "cantidad_cursos",
+      "label": "Carga de Cursos Matriculados",
+      "tipo": "GLOBAL",
+      "categoria": "ACADEMICO",
+      "descripcion": "Número total de asignaturas activas cursadas simultáneamente.",
+      "activo": true,
+      "peso": 0.6
+    }
+  ],
+  "course_features": [
+    {
+      "key": "nota_curso",
+      "label": "Promedio Actual del Curso",
+      "tipo": "CURSO",
+      "categoria": "ACADEMICO",
+      "descripcion": "Calificación media ponderada del alumno en la asignatura específica.",
+      "activo": true,
+      "peso": 2.8
+    },
+    {
+      "key": "porcentaje_asistencia",
+      "label": "Asistencia Específica al Curso",
+      "tipo": "CURSO",
+      "categoria": "ASISTENCIA",
+      "descripcion": "Porcentaje de concurrencia a las sesiones programadas de esta materia.",
+      "activo": true,
+      "peso": 2.1
+    },
+    {
+      "key": "nota_minima_curso",
+      "label": "Nota Mínima Registrada en Curso",
+      "tipo": "CURSO",
+      "categoria": "ACADEMICO",
+      "descripcion": "Puntuación más baja alcanzada en las evaluaciones de la asignatura.",
+      "activo": true,
+      "peso": 1.9
+    },
+    {
+      "key": "promedio_general",
+      "label": "Contexto de Promedio General",
+      "tipo": "CURSO",
+      "categoria": "ACADEMICO",
+      "descripcion": "Rendimiento holístico del estudiante en su trayectoria del período.",
+      "activo": true,
+      "peso": 1.4
+    },
+    {
+      "key": "cantidad_evaluaciones_registradas",
+      "label": "Evaluaciones Calificadas en Curso",
+      "tipo": "CURSO",
+      "categoria": "EVALUATIVO",
+      "descripcion": "Número de calificaciones registradas por el docente titular.",
+      "activo": true,
+      "peso": 1.2
+    },
+    {
+      "key": "nota_examen_principal",
+      "label": "Nota en Examen Parcial o Principal",
+      "tipo": "CURSO",
+      "categoria": "EVALUATIVO",
+      "descripcion": "Calificación obtenida en la evaluación sumativa de mayor ponderación.",
+      "activo": true,
+      "peso": 2.4
+    },
+    {
+      "key": "cantidad_notas_criticas",
+      "label": "Notas Críticas en Curso (<=07)",
+      "tipo": "CURSO",
+      "categoria": "EVALUATIVO",
+      "descripcion": "Frecuencia de evaluaciones del curso con nota inferior a 08.",
+      "activo": true,
+      "peso": 2.0
+    },
+    {
+      "key": "cantidad_notas_desaprobadas",
+      "label": "Notas Desaprobadas en Curso (<=10)",
+      "tipo": "CURSO",
+      "categoria": "EVALUATIVO",
+      "descripcion": "Frecuencia de evaluaciones del curso por debajo de 11.",
+      "activo": true,
+      "peso": 1.7
+    },
+    {
+      "key": "nota_maxima_curso",
+      "label": "Nota Máxima en Curso",
+      "tipo": "CURSO",
+      "categoria": "ACADEMICO",
+      "descripcion": "Mejor calificación obtenida por el alumno dentro de la asignatura.",
+      "activo": true,
+      "peso": 0.8
+    },
+    {
+      "key": "cantidad_cursos_desaprobados",
+      "label": "Cursos Paralelos en Riesgo",
+      "tipo": "CURSO",
+      "categoria": "ACADEMICO",
+      "descripcion": "Impacto colateral de otras materias desaprobadas en el desempeño del curso.",
+      "activo": true,
+      "peso": 1.1
+    }
+  ],
+  "ultima_actualizacion": "2026-10-04T14:27:43.683728"
+}
