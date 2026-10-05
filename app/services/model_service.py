@@ -1,3 +1,4 @@
+import logging
 import joblib
 import pandas as pd
 
@@ -12,8 +13,12 @@ from app.schemas.prediction import (
 from app.schemas.training import FEATURES_CURSO, FEATURES_CURSO_CORTE, FEATURES_GLOBALES, FEATURES_GLOBALES_CORTE
 from app.services.feature_service import preparar_features_curso, preparar_features_globales
 
+logger = logging.getLogger(__name__)
+
 _global_model = None
 _course_model = None
+_global_model_load_attempted = False
+_course_model_load_attempted = False
 
 
 def _clasificar_riesgo(puntaje: float) -> str:
@@ -40,19 +45,39 @@ def _acotar_probabilidad_visible(puntaje: float) -> float:
 
 
 def _cargar_modelo_global():
-    global _global_model
+    global _global_model, _global_model_load_attempted
 
-    if _global_model is None and GLOBAL_MODEL_PATH.exists():
-        _global_model = joblib.load(GLOBAL_MODEL_PATH)
+    if not _global_model_load_attempted and GLOBAL_MODEL_PATH.exists():
+        _global_model_load_attempted = True
+        try:
+            _global_model = joblib.load(GLOBAL_MODEL_PATH)
+        except Exception as e:
+            logger.warning(
+                "No se pudo cargar el modelo global desde '%s' (%s: %s). Se usará el modelo heurístico de respaldo.",
+                GLOBAL_MODEL_PATH,
+                type(e).__name__,
+                e,
+            )
+            _global_model = None
 
     return _global_model
 
 
 def _cargar_modelo_curso():
-    global _course_model
+    global _course_model, _course_model_load_attempted
 
-    if _course_model is None and COURSE_MODEL_PATH.exists():
-        _course_model = joblib.load(COURSE_MODEL_PATH)
+    if not _course_model_load_attempted and COURSE_MODEL_PATH.exists():
+        _course_model_load_attempted = True
+        try:
+            _course_model = joblib.load(COURSE_MODEL_PATH)
+        except Exception as e:
+            logger.warning(
+                "No se pudo cargar el modelo de curso desde '%s' (%s: %s). Se usará el modelo heurístico de respaldo.",
+                COURSE_MODEL_PATH,
+                type(e).__name__,
+                e,
+            )
+            _course_model = None
 
     return _course_model
 
