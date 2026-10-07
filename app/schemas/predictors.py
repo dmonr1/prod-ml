@@ -44,6 +44,12 @@ class ComparativaModelosResponse(BaseModel):
     metrica_optimizada: str
     fecha_evaluacion: str
     total_registros_evaluados: int
+    tipo_modelo: str
+    origen_datos: str
+    variables: List[str]
+    registros_entrenamiento: int
+    alumnos_prueba: int
+    alcance_metricas: str
 
 
 class PlanificadorReentrenamientoResponse(BaseModel):

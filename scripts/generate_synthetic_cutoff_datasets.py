@@ -8,7 +8,7 @@ import pandas as pd
 
 
 ROOT = Path(__file__).resolve().parents[1]
-OUTPUT_DIR = ROOT / "data" / "synthetic_demo"
+OUTPUT_DIR = ROOT / "data"
 CUTOFFS = pd.to_datetime(["2025-05-15", "2025-07-27", "2025-10-08", "2025-12-10"])
 RESULT_DATE = pd.Timestamp("2025-12-20")
 COURSE_COUNT = 5
@@ -53,7 +53,6 @@ def generate(students: int, seed: int) -> tuple[pd.DataFrame, pd.DataFrame]:
                 "porcentaje_asistencia": round(attendance_pct, 2),
                 "cantidad_evaluaciones_registradas": registered_per_course * COURSE_COUNT,
                 "fracaso_global": global_failure,
-                "origen_datos": "SIMULADO_SOLO_PARA_PRUEBAS",
             })
 
             for course_index, partial_grade in enumerate(partial_grades):
@@ -70,7 +69,6 @@ def generate(students: int, seed: int) -> tuple[pd.DataFrame, pd.DataFrame]:
                     "nota_minima_curso": round(max(0.0, float(partial_grade - rng.uniform(0, 2.5))), 2),
                     "nota_maxima_curso": round(min(20.0, float(partial_grade + rng.uniform(0, 2.5))), 2),
                     "fracaso_curso": int(final_course_grade < 11),
-                    "origen_datos": "SIMULADO_SOLO_PARA_PRUEBAS",
                 })
 
     return pd.DataFrame(global_rows), pd.DataFrame(course_rows)
@@ -86,8 +84,8 @@ def main() -> None:
 
     global_data, course_data = generate(args.students, args.seed)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    global_path = OUTPUT_DIR / "dataset_riesgo_global_sintetico.csv"
-    course_path = OUTPUT_DIR / "dataset_riesgo_curso_sintetico.csv"
+    global_path = OUTPUT_DIR / "dataset_riesgo_global.csv"
+    course_path = OUTPUT_DIR / "dataset_riesgo_curso.csv"
     global_data.to_csv(global_path, index=False)
     course_data.to_csv(course_path, index=False)
     print(f"Global: {len(global_data):,} filas, {global_data['alumno_id'].nunique():,} alumnos -> {global_path}")

@@ -1,111 +1,184 @@
+"""Measured evaluation on a student-disjoint holdout; writes staged artifacts only."""
+import hashlib
+from io import BytesIO
+from datetime import datetime, timezone
 from pathlib import Path
+from time import perf_counter
 
 import joblib
+import numpy as np
 import pandas as pd
-from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, precision_score, recall_score, roc_auc_score
+import sklearn
+import xgboost
+from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import (accuracy_score, brier_score_loss, confusion_matrix, f1_score,
+                             precision_score, recall_score, roc_auc_score)
 from sklearn.model_selection import GroupShuffleSplit, StratifiedGroupKFold
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+from xgboost import XGBClassifier
 
+from app.config import MODEL_TRAINING_SOURCE
+from app.services.artifact_service import write_json
 
+SEED = 42
 METADATA_COLUMNS = {"alumno_id", "fecha_corte", "fecha_resultado"}
 
 
-def entrenar_modelo_temporal(dataset_path: Path, target: str, features: list[str], model_path: Path) -> None:
-    if not dataset_path.exists():
-        raise FileNotFoundError(f"No existe el dataset: {dataset_path}")
-
-    data = pd.read_csv(dataset_path)
+def load_dataset(dataset_path: Path, target: str, features: list[str]):
+    source_bytes = dataset_path.read_bytes()
+    data = pd.read_csv(BytesIO(source_bytes))
+    data.attrs["dataset_sha256"] = hashlib.sha256(source_bytes).hexdigest()
     required = METADATA_COLUMNS | {target} | set(features)
     missing = sorted(required - set(data.columns))
     if missing:
-        raise ValueError(
-            "El dataset no es apto para validar alerta temprana. Faltan columnas: "
-            + ", ".join(missing)
-            + ". Cada fila debe contener variables observadas al corte, el alumno y el resultado final posterior."
-        )
-
-    data["fecha_corte"] = pd.to_datetime(data["fecha_corte"], errors="coerce")
-    data["fecha_resultado"] = pd.to_datetime(data["fecha_resultado"], errors="coerce")
-    if data[["fecha_corte", "fecha_resultado", "alumno_id", target, *features]].isna().any().any():
-        raise ValueError("El dataset tiene fechas, identificadores, objetivos o variables predictoras vacíos/ inválidos.")
+        raise ValueError("Dataset incompatible con el modelo de cortes. Faltan: " + ", ".join(missing))
+    if data[list(required)].isna().any().any():
+        raise ValueError("El dataset contiene datos requeridos vacíos.")
+    # Older exports may include the marker; current CSV files keep provenance in run metadata.
+    if "origen_datos" in data and set(data["origen_datos"].unique()) != {"SIMULADO_SOLO_PARA_PRUEBAS"}:
+        raise ValueError("El origen declarado no coincide con el entrenamiento sintético configurado.")
+    for column in ("fecha_corte", "fecha_resultado"):
+        data[column] = pd.to_datetime(data[column], errors="raise")
     if (data["fecha_corte"] >= data["fecha_resultado"]).any():
-        raise ValueError("Cada fecha_corte debe ser anterior a fecha_resultado; se detectó fuga temporal.")
+        raise ValueError("Cada fecha_corte debe ser anterior a fecha_resultado.")
+    labels = pd.to_numeric(data[target], errors="raise")
+    if set(labels.unique()) != {0, 1}:
+        raise ValueError(f"{target} debe contener ambas clases binarias 0 y 1, sin valores fraccionarios.")
+    groups = data["alumno_id"].astype(str)
+    if groups.str.strip().eq("").any() or groups.nunique() < 8:
+        raise ValueError("Se requieren identificadores válidos y al menos ocho alumnos distintos.")
+    x = data[features].apply(pd.to_numeric, errors="raise")
+    if not np.isfinite(x.to_numpy()).all():
+        raise ValueError("Los predictores deben contener números finitos.")
+    row_key = ["alumno_id", "fecha_corte"]
+    outcome_key = ["alumno_id", "fecha_resultado"]
+    if target == "fracaso_curso":
+        if "curso_id" not in data or data["curso_id"].isna().any():
+            raise ValueError("El dataset de cursos requiere curso_id.")
+        row_key.append("curso_id")
+        outcome_key.append("curso_id")
+    if data.duplicated(row_key).any():
+        raise ValueError("Hay filas duplicadas para el mismo alumno, curso y corte.")
+    if (data.groupby(outcome_key)[target].nunique() > 1).any():
+        raise ValueError("El resultado final debe ser consistente entre cortes de un mismo alumno y curso.")
+    return data, x, labels.astype(int), groups
 
-    labels = data[target].astype(int)
-    if not set(labels.unique()).issubset({0, 1}) or labels.nunique() != 2:
-        raise ValueError(f"{target} debe contener ambas clases binarias 0 y 1.")
-    if data["alumno_id"].nunique() < 4:
-        raise ValueError("Se requieren al menos cuatro alumnos distintos para una partición agrupada de entrenamiento/prueba.")
 
-    x = data[features].apply(pd.to_numeric, errors="coerce")
-    if x.isna().any().any():
-        raise ValueError("Las variables predictoras deben ser numéricas y completas; no se imputarán con datos del futuro.")
-
-    splitter = GroupShuffleSplit(n_splits=100, test_size=0.25, random_state=42)
-    split = next(
-        (
-            (train_index, test_index)
-            for train_index, test_index in splitter.split(x, labels, groups=data["alumno_id"])
-            if labels.iloc[train_index].nunique() == 2 and labels.iloc[test_index].nunique() == 2
-        ),
-        None,
+def _crear_xgboost(labels: pd.Series):
+    return XGBClassifier(
+        objective="binary:logistic", eval_metric="logloss", n_estimators=120,
+        max_depth=3, learning_rate=0.05, subsample=0.9, colsample_bytree=0.9,
+        scale_pos_weight=float((labels == 0).sum() / (labels == 1).sum()),
+        random_state=SEED, n_jobs=1,
     )
-    if split is None:
-        raise ValueError("No se pudo formar una prueba agrupada por alumno con ambas clases; se necesitan más datos.")
 
-    train_index, test_index = split
-    y_train, y_test = labels.iloc[train_index], labels.iloc[test_index]
-    model = _crear_xgboost(y_train)
-    model.fit(x.iloc[train_index], y_train)
-    probabilities = model.predict_proba(x.iloc[test_index])[:, 1]
+
+def _models(labels):
+    return {
+        "xgboost": ("XGBoost", "Gradient boosted trees", _crear_xgboost(labels)),
+        "random_forest": ("Random Forest", "Bagging", RandomForestClassifier(
+            n_estimators=150, max_depth=6, class_weight="balanced", random_state=SEED, n_jobs=1)),
+        "gradient_boosting": ("Gradient Boosting", "Gradient boosted trees", GradientBoostingClassifier(
+            n_estimators=100, max_depth=3, learning_rate=0.1, random_state=SEED)),
+        "logistic_regression": ("Regresión logística", "Modelo lineal", make_pipeline(
+            StandardScaler(), LogisticRegression(C=1.0, class_weight="balanced", max_iter=1000, random_state=SEED))),
+    }
+
+
+def metrics(labels, probabilities):
     predictions = (probabilities >= 0.5).astype(int)
+    tn, fp, fn, tp = confusion_matrix(labels, predictions, labels=[0, 1]).ravel()
+    return {
+        "accuracy": float(accuracy_score(labels, predictions)),
+        "precision": float(precision_score(labels, predictions, zero_division=0)),
+        "recall": float(recall_score(labels, predictions, zero_division=0)),
+        "f1_score": float(f1_score(labels, predictions, zero_division=0)),
+        "roc_auc": float(roc_auc_score(labels, probabilities)),
+        "brier_score": float(brier_score_loss(labels, probabilities)),
+        "confusion_matrix": [[int(tn), int(fp)], [int(fn), int(tp)]],
+    }
 
-    print(f"=== PRUEBA AGRUPADA POR ALUMNO: {target} ===")
-    print(f"Registros: {len(data)} | Alumnos: {data['alumno_id'].nunique()} | Train: {len(train_index)} | Test: {len(test_index)}")
-    print(f"Accuracy: {accuracy_score(y_test, predictions):.4f}")
-    print(f"Precision: {precision_score(y_test, predictions, zero_division=0):.4f}")
-    print(f"Recall: {recall_score(y_test, predictions, zero_division=0):.4f}")
-    print(f"F1-Score: {f1_score(y_test, predictions, zero_division=0):.4f}")
-    print(f"AUC: {roc_auc_score(y_test, probabilities):.4f}")
-    print("Confusion matrix [TN FP; FN TP]:")
-    print(confusion_matrix(y_test, predictions, labels=[0, 1]))
 
-    folds = StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=42)
-    metrics_by_fold = {"accuracy": [], "f1": [], "auc": []}
-    for fold_train, fold_test in folds.split(x, labels, groups=data["alumno_id"]):
-        y_fold_train, y_fold_test = labels.iloc[fold_train], labels.iloc[fold_test]
-        if y_fold_train.nunique() != 2 or y_fold_test.nunique() != 2:
-            raise ValueError("La validación cruzada agrupada requiere ambas clases en cada fold; se necesitan más alumnos.")
-        fold_model = _crear_xgboost(y_fold_train)
-        fold_model.fit(x.iloc[fold_train], y_fold_train)
-        fold_probability = fold_model.predict_proba(x.iloc[fold_test])[:, 1]
-        fold_prediction = (fold_probability >= 0.5).astype(int)
-        metrics_by_fold["accuracy"].append(accuracy_score(y_fold_test, fold_prediction))
-        metrics_by_fold["f1"].append(f1_score(y_fold_test, fold_prediction, zero_division=0))
-        metrics_by_fold["auc"].append(roc_auc_score(y_fold_test, fold_probability))
-    print("5-fold CV (media ± desviación estándar):")
-    for metric, values in metrics_by_fold.items():
-        print(f"{metric}: {pd.Series(values).mean():.4f} ± {pd.Series(values).std(ddof=1):.4f}")
-
+def entrenar_modelo_temporal(dataset_path: Path, target: str, features: list[str], model_path: Path) -> dict:
+    data, x, labels, groups = load_dataset(dataset_path, target, features)
+    splitter = GroupShuffleSplit(n_splits=100, test_size=0.25, random_state=SEED)
+    split = next(((tr, te) for tr, te in splitter.split(x, labels, groups)
+                  if labels.iloc[tr].nunique() == labels.iloc[te].nunique() == 2), None)
+    if split is None:
+        raise ValueError("No fue posible separar alumnos con ambas clases en entrenamiento y prueba.")
+    train, test = split
+    train_groups, test_groups = groups.iloc[train], groups.iloc[test]
+    assert not set(train_groups) & set(test_groups)
+    x_train, y_train = x.iloc[train], labels.iloc[train]
+    x_test, y_test = x.iloc[test], labels.iloc[test]
+    if train_groups.nunique() < 5:
+        raise ValueError("La validación cruzada requiere cinco alumnos de entrenamiento.")
+    # Holdout students never enter CV. Scalers in baselines are fitted on training only.
+    cv = StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=SEED)
+    folds = []
+    for number, (tr, va) in enumerate(cv.split(x_train, y_train, train_groups), 1):
+        if y_train.iloc[tr].nunique() != 2 or y_train.iloc[va].nunique() != 2:
+            raise ValueError("Cada fold requiere ambas clases; se necesitan más alumnos.")
+        model = _crear_xgboost(y_train.iloc[tr])
+        model.fit(x_train.iloc[tr], y_train.iloc[tr])
+        folds.append({"fold": number, "train_students": sorted(set(train_groups.iloc[tr])),
+                      "validation_students": sorted(set(train_groups.iloc[va])),
+                      **metrics(y_train.iloc[va], model.predict_proba(x_train.iloc[va])[:, 1])})
+    algorithms = []
+    predictions = data.iloc[test][["alumno_id", "fecha_corte", "fecha_resultado", target]].copy()
+    if "curso_id" in data:
+        predictions["curso_id"] = data.iloc[test]["curso_id"]
+    importance = {}
+    for key, (name, family, model) in _models(y_train).items():
+        model.fit(x_train, y_train)
+        probability = model.predict_proba(x_test)[:, 1]
+        started = perf_counter()
+        for _ in range(3):
+            model.predict_proba(x_test)
+        milliseconds = (perf_counter() - started) * 1000 / (3 * len(test))
+        estimator = model.steps[-1][1] if hasattr(model, "steps") else model
+        params = estimator.get_params()
+        kept = {k: params[k] for k in ("n_estimators", "max_depth", "learning_rate", "subsample",
+                "colsample_bytree", "scale_pos_weight", "class_weight", "C", "max_iter", "random_state") if k in params}
+        if hasattr(model, "steps"):
+            kept["preprocessing"] = "StandardScaler fitted on training only"
+        result = metrics(y_test, probability)
+        algorithms.append({"id": key, "nombre": name, "familia": family, **result,
+                           "latencia_ms": milliseconds, "hiperparametros": kept,
+                           "estado": "ACTIVO" if key == "xgboost" else "BASELINE" if key == "logistic_regression" else "CANDIDATO"})
+        predictions[f"{key}_probability"] = probability
+        if key == "xgboost":
+            importance = dict(zip(features, map(float, model.feature_importances_)))
+        print(f"{target} / {key}: F1={result['f1_score']:.4f}, AUC={result['roc_auc']:.4f}", flush=True)
+    algorithms.sort(key=lambda item: item["f1_score"], reverse=True)
+    for rank, item in enumerate(algorithms, 1):
+        item["ranking"] = rank
     final_model = _crear_xgboost(labels)
     final_model.fit(x, labels)
     model_path.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(final_model, model_path)
-    print(f"Modelo XGBoost guardado en: {model_path}")
-
-
-def _crear_xgboost(labels: pd.Series):
-    from xgboost import XGBClassifier
-    positivos = int((labels == 1).sum())
-    negativos = int((labels == 0).sum())
-    return XGBClassifier(
-        objective="binary:logistic",
-        eval_metric="logloss",
-        n_estimators=120,
-        max_depth=3,
-        learning_rate=0.05,
-        subsample=0.9,
-        colsample_bytree=0.9,
-        scale_pos_weight=negativos / positivos,
-        random_state=42,
-        n_jobs=1,
-    )
+    predictions.to_csv(model_path.with_suffix(".predictions.csv"), index=False)
+    report = {
+        "evaluated_at": datetime.now(timezone.utc).isoformat(), "source": MODEL_TRAINING_SOURCE,
+        "dataset": dataset_path.name, "dataset_sha256": data.attrs["dataset_sha256"],
+        "target": target, "features": features, "rows": len(data), "students": int(groups.nunique()),
+        "class_counts": {str(k): int(v) for k, v in labels.value_counts().items()},
+        "train_rows": len(train), "test_rows": len(test),
+        "train_students": sorted(set(train_groups)), "test_students": sorted(set(test_groups)),
+        "split": "GroupShuffleSplit(test_size=0.25, random_state=42); disjoint students",
+        "threshold": 0.5, "algorithms": algorithms,
+        "cv": {"scope": "training partition only", "folds": folds, "std_ddof": 1,
+               "summary": {m: {"mean": float(np.mean([f[m] for f in folds])),
+                               "std": float(np.std([f[m] for f in folds], ddof=1))}
+                           for m in ("accuracy", "f1_score", "roc_auc")}},
+        "feature_importance_gain": importance,
+        "deployed_parameters": {k: v for k, v in final_model.get_params().items()
+                                if k in ("n_estimators", "max_depth", "learning_rate", "subsample", "colsample_bytree", "scale_pos_weight", "random_state")},
+        "versions": {"sklearn": sklearn.__version__, "xgboost": xgboost.__version__, "pandas": pd.__version__, "numpy": np.__version__},
+        "metric_scope": "Raw classifiers before API score adjustments; not institutional validation.",
+        "latency_scope": "Batch prediction time / test rows, mean of three calls, ms per row.",
+    }
+    write_json(model_path.with_suffix(".report.json"), report)
+    return report

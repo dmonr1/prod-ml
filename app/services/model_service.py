@@ -1,8 +1,8 @@
 import logging
 import joblib
 import pandas as pd
+from functools import lru_cache
 
-from app.config import COURSE_MODEL_PATH, GLOBAL_MODEL_PATH
 from app.config import RISK_THRESHOLDS
 from app.schemas.prediction import (
     PrediccionCursoRequest,
@@ -12,13 +12,10 @@ from app.schemas.prediction import (
 )
 from app.schemas.training import FEATURES_CURSO, FEATURES_CURSO_CORTE, FEATURES_GLOBALES, FEATURES_GLOBALES_CORTE
 from app.services.feature_service import preparar_features_curso, preparar_features_globales
+from app.services.artifact_service import active_run, active_model_path
 
 logger = logging.getLogger(__name__)
 
-_global_model = None
-_course_model = None
-_global_model_load_attempted = False
-_course_model_load_attempted = False
 
 
 def _clasificar_riesgo(puntaje: float) -> str:
@@ -44,42 +41,26 @@ def _acotar_probabilidad_visible(puntaje: float) -> float:
     return round(puntaje, 2)
 
 
-def _cargar_modelo_global():
-    global _global_model, _global_model_load_attempted
-
-    if not _global_model_load_attempted and GLOBAL_MODEL_PATH.exists():
-        _global_model_load_attempted = True
-        try:
-            _global_model = joblib.load(GLOBAL_MODEL_PATH)
-        except Exception as e:
-            logger.warning(
-                "No se pudo cargar el modelo global desde '%s' (%s: %s). Se usará el modelo heurístico de respaldo.",
-                GLOBAL_MODEL_PATH,
-                type(e).__name__,
-                e,
-            )
-            _global_model = None
-
-    return _global_model
+@lru_cache(maxsize=4)
+def _load_artifact(path: str, modified_ns: int):
+    return joblib.load(path)
 
 
-def _cargar_modelo_curso():
-    global _course_model, _course_model_load_attempted
+def _load_task(task: str, manifest: dict | None = None):
+    path = active_model_path(task, manifest)
+    try:
+        return _load_artifact(str(path), path.stat().st_mtime_ns)
+    except Exception as exc:
+        logger.warning("No se pudo cargar el modelo %s: %s. Se usará respaldo heurístico.", task, exc)
+        return None
 
-    if not _course_model_load_attempted and COURSE_MODEL_PATH.exists():
-        _course_model_load_attempted = True
-        try:
-            _course_model = joblib.load(COURSE_MODEL_PATH)
-        except Exception as e:
-            logger.warning(
-                "No se pudo cargar el modelo de curso desde '%s' (%s: %s). Se usará el modelo heurístico de respaldo.",
-                COURSE_MODEL_PATH,
-                type(e).__name__,
-                e,
-            )
-            _course_model = None
 
-    return _course_model
+def _cargar_modelo_global(manifest: dict | None = None):
+    return _load_task("global", manifest)
+
+
+def _cargar_modelo_curso(manifest: dict | None = None):
+    return _load_task("course", manifest)
 
 
 def _obtener_probabilidad_clase_positiva(model, dataframe: pd.DataFrame) -> float | None:
@@ -144,10 +125,11 @@ def _ajustar_puntaje_global(payload: PrediccionGlobalRequest, puntaje: float) ->
     return puntaje_ajustado
 
 
-def predecir_riesgo_global(payload: PrediccionGlobalRequest, modelo_version: str) -> PrediccionGlobalResponse:
+def predecir_riesgo_global(payload: PrediccionGlobalRequest, modelo_version: str, manifest: dict | None = None) -> PrediccionGlobalResponse:
+    manifest = active_run() if manifest is None else manifest
     features = preparar_features_globales(payload)
 
-    model = _cargar_modelo_global()
+    model = _cargar_modelo_global(manifest)
     expected_features = FEATURES_GLOBALES_CORTE if payload.corte_seguimiento_id is not None else FEATURES_GLOBALES
     model_features = _nombres_features_del_modelo(model, expected_features)
     if payload.corte_seguimiento_id is not None and model_features != FEATURES_GLOBALES_CORTE:
@@ -158,7 +140,9 @@ def predecir_riesgo_global(payload: PrediccionGlobalRequest, modelo_version: str
 
     if puntaje is None:
         puntaje, nivel = _predecir_global_heuristico(payload)
+        modelo_version = "heuristic-fallback"
     else:
+        modelo_version = manifest.get("models", {}).get("global", {}).get("run_id", modelo_version)
         puntaje = _ajustar_puntaje_global(payload, puntaje)
         nivel = _clasificar_riesgo(puntaje)
 
@@ -214,10 +198,11 @@ def _ajustar_puntaje_curso(payload: PrediccionCursoRequest, puntaje: float) -> f
     return puntaje_ajustado
 
 
-def predecir_riesgo_curso(payload: PrediccionCursoRequest, modelo_version: str) -> PrediccionCursoResponse:
+def predecir_riesgo_curso(payload: PrediccionCursoRequest, modelo_version: str, manifest: dict | None = None) -> PrediccionCursoResponse:
+    manifest = active_run() if manifest is None else manifest
     features = preparar_features_curso(payload)
 
-    model = _cargar_modelo_curso()
+    model = _cargar_modelo_curso(manifest)
     expected_features = FEATURES_CURSO_CORTE if payload.corte_seguimiento_id is not None else FEATURES_CURSO
     model_features = _nombres_features_del_modelo(model, expected_features)
     if payload.corte_seguimiento_id is not None and model_features != FEATURES_CURSO_CORTE:
@@ -228,7 +213,9 @@ def predecir_riesgo_curso(payload: PrediccionCursoRequest, modelo_version: str) 
 
     if puntaje is None:
         puntaje, nivel = _predecir_curso_heuristico(payload)
+        modelo_version = "heuristic-fallback"
     else:
+        modelo_version = manifest.get("models", {}).get("course", {}).get("run_id", modelo_version)
         puntaje = _ajustar_puntaje_curso(payload, puntaje)
         nivel = _clasificar_riesgo(puntaje)
 

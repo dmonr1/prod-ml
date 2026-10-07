@@ -7,3 +7,8 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 data/synthetic_demo/models/
+data/legacy/
+trained_models/active_run.json
+trained_models/training_status.json
+trained_models/runs/
+trained_models/.training.lock
