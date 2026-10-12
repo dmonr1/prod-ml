@@ -8,6 +8,7 @@ historiales del colegio ni validación de resultados educativos.
 
 - `data/dataset_riesgo_global.csv`: 8.000 filas de 2.000 alumnos simulados.
 - `data/dataset_riesgo_curso.csv`: 40.000 filas; cinco cursos y cuatro cortes por alumno.
+- `alumno_id` usa identificadores numéricos de formato similar al de una clave de base de datos; son ficticios y no corresponden a alumnos reales.
 - Cada fila incluye `alumno_id`, `fecha_corte` y `fecha_resultado`.
 - La procedencia sintética se registra en `MODEL_TRAINING_SOURCE` y en los
   informes JSON del entrenamiento; los CSV activos no incluyen `origen_datos`.

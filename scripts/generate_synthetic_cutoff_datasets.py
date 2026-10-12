@@ -19,7 +19,10 @@ def generate(students: int, seed: int) -> tuple[pd.DataFrame, pd.DataFrame]:
     global_rows = []
     course_rows = []
 
-    for student_id in range(1, students + 1):
+    for student_index in range(1, students + 1):
+        # Numeric database-style identifiers; these remain synthetic and do not
+        # represent real students or records from the school database.
+        student_id = 100_000 + student_index
         ability = rng.normal(12.8, 2.6)
         attendance_habit = np.clip(rng.beta(8, 2), 0.35, 1.0)
         course_difficulties = rng.normal(0, 2.0, COURSE_COUNT)
@@ -41,7 +44,7 @@ def generate(students: int, seed: int) -> tuple[pd.DataFrame, pd.DataFrame]:
             global_average = float(np.mean(partial_grades))
 
             global_rows.append({
-                "alumno_id": f"SIM-{student_id:05d}",
+                "alumno_id": student_id,
                 "fecha_corte": cutoff.date().isoformat(),
                 "fecha_resultado": RESULT_DATE.date().isoformat(),
                 "promedio_general": round(global_average, 2),
@@ -58,7 +61,7 @@ def generate(students: int, seed: int) -> tuple[pd.DataFrame, pd.DataFrame]:
             for course_index, partial_grade in enumerate(partial_grades):
                 final_course_grade = final_grades[course_index]
                 course_rows.append({
-                    "alumno_id": f"SIM-{student_id:05d}",
+                    "alumno_id": student_id,
                     "curso_id": course_index + 1,
                     "fecha_corte": cutoff.date().isoformat(),
                     "fecha_resultado": RESULT_DATE.date().isoformat(),
