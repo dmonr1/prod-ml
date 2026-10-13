@@ -59,7 +59,7 @@ class TrainingWorkflowTest(unittest.TestCase):
             response = self.client.get('/models/comparison', params={'task': task})
             self.assertEqual(200, response.status_code)
             self.assertEqual(report['test_rows'], response.json()['total_registros_evaluados'])
-            self.assertEqual('synthetic_cutoff_simulation', response.json()['origen_datos'])
+            self.assertNotIn('origen_datos', response.json())
 
     def test_failures_never_publish_partial_models_or_report_success(self):
         before = config.ACTIVE_RUN_PATH.read_bytes()

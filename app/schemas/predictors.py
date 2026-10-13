@@ -45,7 +45,6 @@ class ComparativaModelosResponse(BaseModel):
     fecha_evaluacion: str
     total_registros_evaluados: int
     tipo_modelo: str
-    origen_datos: str
     variables: List[str]
     registros_entrenamiento: int
     alumnos_prueba: int

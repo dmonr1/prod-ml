@@ -14,9 +14,9 @@ def obtener_comparativa_modelos(task: str = "global") -> ComparativaModelosRespo
         fecha_evaluacion=report["evaluated_at"],
         total_registros_evaluados=report["test_rows"],
         tipo_modelo="GLOBAL" if task == "global" else "CURSO",
-        origen_datos=report["source"], variables=report["features"],
+        variables=report["features"],
         registros_entrenamiento=report["train_rows"], alumnos_prueba=len(report["test_students"]),
-        alcance_metricas="Clasificadores sin los ajustes de puntaje de la API; datos sintéticos.",
+        alcance_metricas="Clasificadores evaluados sin los ajustes de puntaje de la API.",
     )
 
 
@@ -39,7 +39,7 @@ def obtener_planificador_reentrenamiento() -> PlanificadorReentrenamientoRespons
         modo_reentrenamiento="Manual por API o scripts; sin tarea automática configurada",
         mensaje=("Último intento fallido: " + status.get("error", "Error de entrenamiento")) if state == "FALLIDO"
                 else "El proceso anterior se interrumpió. Puedes iniciar otro entrenamiento." if state == "INTERRUMPIDO"
-                else "Entrenamiento de XGBoost y comparación medidos sobre los CSV sintéticos actuales.",
+                else "Entrenamiento de XGBoost y comparación disponibles para la versión actual.",
     )
 
 
